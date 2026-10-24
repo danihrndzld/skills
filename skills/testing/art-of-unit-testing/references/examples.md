@@ -114,6 +114,6 @@ func TestOrderApprovalThreshold(t *testing.T) {
 
 | Test | Mutation | Red? |
 |---|---|---|
-| order over 10000 requires approval | `>` → `>=` | ✓ (boundary test catches it) |
-| order over 10000 requires approval | threshold 10000 → 20000 | ✓ |
-| placing an order emails confirmation | delete `sendConfirmation` line | ✓ |
+| order over 10000 requires approval | `>` to `>=` | yes (boundary test catches it) |
+| order over 10000 requires approval | threshold 10000 to 20000 | yes |
+| placing an order emails confirmation | delete `sendConfirmation` line | yes |

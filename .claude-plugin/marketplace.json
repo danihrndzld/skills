@@ -6,7 +6,7 @@
     {
       "name": "danihrndzld-skills",
       "source": "./",
-      "description": "Unit, integration, e2e and CI/CD testing skills that produce JUnit, HTML and PDF reports, plus Spanish anti-slop and exam writing.",
+      "description": "Unit, integration, e2e and CI/CD testing skills that produce HTML, PDF and email summary reports and attach the test runner's JUnit XML, plus Spanish anti-slop and exam writing.",
       "category": "testing",
       "keywords": ["testing", "ci-cd", "test-reports", "writing"]
     }

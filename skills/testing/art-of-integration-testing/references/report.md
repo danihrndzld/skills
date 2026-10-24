@@ -2,7 +2,7 @@
 
 Build a report only when the user asks for one, e.g., "give me a report", "a PDF", "something for CI", or "email the results". The tests and the step 8 block in `SKILL.md` come first. The report adds a document for people who won't read the code.
 
-You write one file, `report.json`. The script `scripts/build_report.py` reads it together with the JUnit XML from the test runner, validates both, and writes the outputs. Counts, pass and fail results, and durations come from the JUnit XML, so never type them by hand.
+You write one file, `report.json`. Run `scripts/build_report.py` from this skill's own folder by its absolute path. The skill may be installed in the project's `.claude/skills`, globally in `~/.claude/skills` or `~/.agents/skills`, or inside a plugin, so use the folder that holds this skill's `SKILL.md`. It is called `$SKILL_DIR` below. The script reads it together with the JUnit XML from the test runner, validates both, and writes the outputs. Counts, pass and fail results, and durations come from the JUnit XML, so never type them by hand.
 
 ## Steps
 
@@ -14,8 +14,8 @@ You write one file, `report.json`. The script `scripts/build_report.py` reads it
    | pytest | `pytest -m integration --junitxml=$R/junit.xml` |
    | Vitest | `npx vitest run --config vitest.integration.config.ts --reporter=junit --outputFile=$R/junit.xml` |
    | Jest | `JEST_JUNIT_OUTPUT_FILE=$R/junit.xml npx jest --reporters=default --reporters=jest-junit` |
-   | Maven | `mvn verify`, then copy `target/failsafe-reports/*.xml` (or `surefire-reports`) to `$R` |
-   | Gradle | `gradle integrationTest`, then copy `build/test-results/integrationTest/*.xml` |
+   | Maven | `mvn verify` writes one `target/failsafe-reports/TEST-*.xml` (or `target/surefire-reports/TEST-*.xml`) per test class |
+   | Gradle | `gradle integrationTest` writes one `build/test-results/integrationTest/TEST-*.xml` per test class (`build/test-results/test/TEST-*.xml` for the `test` task) |
    | dotnet | `dotnet test --filter Category=Integration --logger "junit;LogFilePath=$R/junit.xml"` |
    | Go | `gotestsum --junitfile $R/junit.xml -- -tags=integration ./...` |
 
@@ -23,11 +23,11 @@ You write one file, `report.json`. The script `scripts/build_report.py` reads it
 4. Build the outputs:
 
    ```
-   python3 .claude/skills/art-of-integration-testing/scripts/build_report.py $R/report.json \
+   python3 $SKILL_DIR/scripts/build_report.py $R/report.json \
      --junit $R/junit.xml [--coverage $R/coverage.json] --root . --formats html,pdf
    ```
 
-   Use `uv run` instead of `python3` if the project uses uv. Add `--validate-only` to check `report.json` without rendering. Exit 1 lists validation errors, so fix them and run again. Exit 2 means no Chrome was found. The HTML is still written, and you can set the `CHROME` environment variable to the browser path.
+   Maven and Gradle write one `TEST-*.xml` per test class. Pass each file with its own `--junit` flag, either listed by hand or with `$(for f in target/failsafe-reports/TEST-*.xml; do printf -- '--junit %s ' "$f"; done)` in place of `--junit $R/junit.xml`. Use `uv run` instead of `python3` if the project uses uv. Add `--validate-only` to check `report.json` without rendering. Exit 1 lists validation errors, so fix them and run again. Exit 2 means `pdf` was requested and Chrome was not found, timed out, or wrote no PDF. The HTML is still written, and you can set the `CHROME` environment variable to the browser path.
 
 ## Formats
 
@@ -87,7 +87,9 @@ Write in the past tense, with a number, an ID, or a `file:line` in each sentence
 The user picks the formats with `--formats` and the attachments in the mail step. Upload the whole report folder as the CI artifact. Send `summary.html` as the email body and attach `report.pdf` and `junit.xml`.
 
 ```yaml
-- run: python3 .claude/skills/art-of-integration-testing/scripts/build_report.py test-reports/latest/report.json --junit test-reports/latest/junit.xml --formats html,pdf,summary
+- name: Build the test report
+  if: always()
+  run: python3 .claude/skills/art-of-integration-testing/scripts/build_report.py test-reports/latest/report.json --junit test-reports/latest/junit.xml --formats html,pdf,summary --ci
 - uses: actions/upload-artifact@v4
   if: always()
   with:
@@ -108,3 +110,7 @@ The user picks the formats with `--formats` and the attachments in the mail step
 ```
 
 In CI, the JUnit step must write to `test-reports/latest/junit.xml`, and `report.json` must already be in that folder, either committed or written by an earlier step.
+
+The build step must run even when tests fail. Give the test step `continue-on-error: true`, or put `if: always()` on every later step as above, so the test step does not stop the job before the report is built. A committed `report.json` cannot list failures that first happen in this run, so `--ci` lists them, and `tests[]` entries that match no JUnit case, in an "Undocumented results" section instead of stopping with a validation error. When any of them failed, the verdict shown is fail.
+
+The path `.claude/skills/art-of-integration-testing/scripts/build_report.py` works in CI only when the skill is installed at project level (`npx skills add danihrndzld/skills --skill art-of-integration-testing`, with the installed folder committed) or when you commit a copy of the script to the repo and point the step at it.

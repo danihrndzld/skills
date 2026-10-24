@@ -11,13 +11,15 @@ The script is one file with no dependencies beyond the Python 3.10+ standard lib
 ```
 python3 scripts/build_report.py test-reports/2026-10-24-rates/report.json \
   [--junit junit.xml ...] [--coverage coverage.json] [--root .] \
-  [--out DIR] [--formats html,pdf,summary] [--validate-only]
+  [--out DIR] [--formats html,pdf,summary] [--validate-only] [--ci]
 ```
 
+The agent runs `scripts/build_report.py` from the skill's own folder by its absolute path, because the skill may be installed in the project's `.claude/skills`, globally in `~/.claude/skills` or `~/.agents/skills`, or inside a plugin.
+
 - Outputs go next to `report.json` unless `--out` is given. The convention is `test-reports/YYYY-MM-DD-<subject>/` in the tested project.
-- `--formats` takes any comma-separated subset of `html`, `pdf`, `summary`. The default is `html,pdf`. Output names are `report.html`, `report.pdf` and `summary.html`.
-- JUnit XML and coverage JSON passed in are copied into the output folder (as `junit.xml`, or `junit-1.xml`, `junit-2.xml` when there are several, and `coverage.json`), so the artifact folder is complete. The script never writes JUnit XML itself. JUnit XML from the test runner is the generic, machine-readable format.
-- Exit 0 on success. Exit 1 with a list of validation errors. Exit 2 when `pdf` was requested and Chrome was not found, timed out, or wrote no PDF. The HTML is still written, and the message names the `CHROME` environment variable.
+- `--formats` takes any comma-separated subset of `html`, `pdf`, `summary`. The default is `html,pdf`. An empty list is a usage error. Output names are `report.html`, `report.pdf` and `summary.html`.
+- JUnit XML and coverage JSON passed in are copied into the output folder (as `junit.xml`, or `junit-1.xml`, `junit-2.xml` when there are several, and `coverage.json`), so the artifact folder is complete. An input that already sits in the output folder under its target name is not copied again. Every input is read before any copy is written, so one input never overwrites another, and `junit.xml` or `junit-N.xml` files left by an earlier run are removed when the run copies JUnit XML, unless they are inputs of this run. The script never writes JUnit XML itself. JUnit XML from the test runner is the generic, machine-readable format.
+- Exit 0 on success. Exit 1 with a list of validation errors, with a message for an unreadable or malformed input (missing file, bad JSON, bad XML), or for a usage error. Exit 2 when `pdf` was requested and Chrome was not found, timed out, or wrote no PDF. The HTML is still written, and the message names the `CHROME` environment variable.
 - Chrome lookup order: `$CHROME`, macOS app paths (Google Chrome, Chromium, Microsoft Edge, Brave), then `google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser`, `microsoft-edge`, `brave-browser` on `PATH`.
 - PDF: one Chrome run, `--headless=new --disable-gpu --no-pdf-header-footer --generate-pdf-document-outline --virtual-time-budget=5000 --print-to-pdf=<path> file://<report.html>`.
 
@@ -44,7 +46,7 @@ python3 scripts/build_report.py test-reports/2026-10-24-rates/report.json \
 }
 ```
 
-`sections`, `tests` and `defects` are optional. Strings in `summary`, `text`, `after` and table cells are trusted HTML written by the agent. All other strings are escaped.
+`sections`, `tests` and `defects` are optional, and `null` counts as empty. Strings in `summary`, `text`, `after` and table cells are trusted HTML written by the agent. All other strings are escaped.
 
 ## Derived by the script
 
@@ -53,7 +55,8 @@ python3 scripts/build_report.py test-reports/2026-10-24-rates/report.json \
 | Test run: totals (passed, failed, errors, skipped, duration) and a per-suite table | JUnit XML |
 | Failures: one block per failing case with the message | JUnit XML |
 | Coverage: per-file statement and branch percentages and totals | coverage.py JSON (`coverage json`) or istanbul `coverage-summary.json` |
-| Traceability: `tests[]` joined with the JUnit status of each test | `report.json` + JUnit XML |
+| Undocumented results, only with `--ci`: failing JUnit cases missing from `defects[]` and `tests[]` entries with no JUnit case, as a table of test, status and message | `report.json` + JUnit XML |
+| Traceability: `tests[]` joined with the JUnit status of each test, or "no JUnit" when no JUnit XML was given | `report.json` + JUnit XML |
 | Footer: input files and build time | arguments |
 
 ## Validation
@@ -62,9 +65,11 @@ python3 scripts/build_report.py test-reports/2026-10-24-rates/report.json \
 - With `--junit`: every `tests[].test` and `defects[].test` must match exactly one JUnit test case (by name, or by `classname.name`), and every failing or erroring JUnit case must appear in `defects[]`.
 - `verdict.status` must be one of `pass`, `conditional`, `fail`.
 
+With `--ci`, the two JUnit checks that only the current run can satisfy are relaxed, because a committed `report.json` cannot list failures that happen in this run. A failing or erroring JUnit case that is not in `defects[]`, and a `tests[]` entry that matches no JUnit case, are not validation errors. They are listed in the Undocumented results section. When any undocumented case failed or errored, the verdict shown in `report.html` and `summary.html` is fail, with a sentence that says why and repeats the written verdict. Location checks and the `verdict.status` check stay errors. Without `--ci`, validation is strict.
+
 ## Page layout
 
-One page for every skill type, in this order: `h1` title, meta line, summary, verdict callout, the agent's sections, the derived sections (Test run, Failures, Coverage, Traceability) when their inputs exist, and the footer.
+One page for every skill type, in this order: `h1` title, meta line, summary, verdict callout, the agent's sections, the derived sections (Test run, Undocumented results, Failures, Coverage, Traceability) when their inputs exist, and the footer.
 
 The visual design follows a plain review document: a centered 1040 px column, DM Sans for text and JetBrains Mono for code (one Google Fonts link, Helvetica and Menlo fallbacks), `h2` with a 2 px accent rule, tables inside a bordered card with a dark header row and zebra rows, right-aligned tabular numbers for numeric columns, and green, amber and red only for status.
 
@@ -77,10 +82,12 @@ Print: `@media print` forces the light tokens, removes the page background, repe
 
 ## CI and email
 
-The skill's `references/report.md` shows this GitHub Actions block. The user picks the formats with `--formats` and picks the attachments in the mail step.
+The skill's `references/report.md` shows this GitHub Actions block. The user picks the formats with `--formats` and picks the attachments in the mail step. The test step must not stop the job before the report is built, so give it `continue-on-error: true` or put `if: always()` on every later step. The `--ci` flag turns failures that the committed `report.json` does not list into an Undocumented results section instead of a validation error. The path `.claude/skills/<skill>/scripts/build_report.py` exists in CI only when the skill is installed at project level (`npx skills add danihrndzld/skills --skill <skill>`, with the folder committed) or when a copy of the script is committed to the repo.
 
 ```yaml
-- run: python3 .claude/skills/art-of-e2e-testing/scripts/build_report.py test-reports/latest/report.json --junit test-reports/latest/junit.xml --formats html,pdf,summary
+- name: Build the test report
+  if: always()
+  run: python3 .claude/skills/art-of-e2e-testing/scripts/build_report.py test-reports/latest/report.json --junit test-reports/latest/junit.xml --formats html,pdf,summary --ci
 - uses: actions/upload-artifact@v4
   if: always()
   with:

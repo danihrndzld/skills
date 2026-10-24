@@ -3,7 +3,7 @@
 
 Usage:
   python3 build_report.py report.json [--junit junit.xml ...] [--coverage coverage.json]
-      [--root .] [--out DIR] [--formats html,pdf,summary] [--validate-only]
+      [--root .] [--out DIR] [--formats html,pdf,summary] [--validate-only] [--ci]
 
 Counts, statuses and coverage come from the runner's files, never from report.json.
 The contract is in shared/report/README.md of the skills repo.
@@ -123,7 +123,9 @@ def parse_junit(paths: list[Path]) -> tuple[list[dict], list[dict]]:
                 own.append({"name": tc.get("name", ""), "classname": tc.get("classname", ""),
                             "status": status, "message": message, "time": float(tc.get("time") or 0)})
             if own:
-                time = float(suite.get("time") or 0) or sum(c["time"] for c in own)
+                # A suite with child suites reports their time in its own; count only its direct cases.
+                nested = suite.find("testsuite") is not None
+                time = (0 if nested else float(suite.get("time") or 0)) or sum(c["time"] for c in own)
                 suites.append({"name": suite.get("name", path.name), "cases": own, "time": time})
                 cases += own
     return cases, suites
@@ -168,24 +170,39 @@ def check_location(entry: dict, kind: str, root: Path) -> str | None:
     return None
 
 
-def validate(report: dict, cases: list[dict] | None, root: Path) -> list[str]:
+def undocumented_failures(report: dict, cases: list[dict]) -> list[dict]:
+    """Failing or erroring JUnit cases that no defects[] entry names."""
+    listed = report.get("defects") or []
+    return [c for c in cases if c["status"] in ("failed", "error")
+            and not any(find_case([c], str(d.get("test", ""))) for d in listed)]
+
+
+def undocumented_results(report: dict, cases: list[dict]) -> list[list[str]]:
+    """Rows (test, status, message) for the Undocumented results section of a --ci build."""
+    rows = [[f"{c['classname']}.{c['name']}", c["status"], c["message"]] for c in undocumented_failures(report, cases)]
+    for t in report.get("tests") or []:
+        if not find_case(cases, str(t.get("test", ""))):
+            rows.append([str(t.get("test", "")), "not in JUnit", f"{t.get('id')} is listed in tests[], but this run has no such test case."])
+    return rows
+
+
+def validate(report: dict, cases: list[dict] | None, root: Path, ci: bool = False) -> list[str]:
+    """With ci, results that only this run can know (new failures, missing test cases) are not errors."""
     errors = []
     status = (report.get("verdict") or {}).get("status")
     if status not in STATUSES:
         errors.append(f"verdict.status is '{status}'; it must be one of {', '.join(STATUSES)}.")
     for kind, key in (("Test", "tests"), ("Defect", "defects")):
-        for entry in report.get(key, []):
+        for entry in report.get(key) or []:
             if err := check_location(entry, kind, root):
                 errors.append(err)
             if cases is not None:
                 found = len(find_case(cases, str(entry.get("test", ""))))
-                if found != 1:
+                if found != 1 and not (ci and kind == "Test" and found == 0):
                     errors.append(f"{kind} {entry.get('id')}: '{entry.get('test')}' matches {found} JUnit test cases, expected 1.")
-    if cases is not None:
-        listed = report.get("defects", [])
-        for c in cases:
-            if c["status"] in ("failed", "error") and not any(find_case([c], str(d.get("test", ""))) for d in listed):
-                errors.append(f"JUnit test {c['classname']}.{c['name']} {c['status']} but is not listed in defects[].")
+    if cases is not None and not ci:
+        for c in undocumented_failures(report, cases):
+            errors.append(f"JUnit test {c['classname']}.{c['name']} {c['status']} but is not listed in defects[].")
     return errors
 
 
@@ -240,10 +257,12 @@ def code(text) -> str:
 
 
 def pct(v) -> str:
-    return "n/a" if v is None else f"{v:.1f}%"
+    """istanbul writes "Unknown" when a file has nothing to count."""
+    is_number = isinstance(v, (int, float)) and not isinstance(v, bool)
+    return f"{v:.1f}%" if is_number else "n/a"
 
 
-def derived_sections(report: dict, cases, suites, coverage) -> str:
+def derived_sections(report: dict, cases, suites, coverage, undocumented=()) -> str:
     out = []
     if cases is not None:
         n = counts(cases, sum(s["time"] for s in suites))
@@ -257,10 +276,16 @@ def derived_sections(report: dict, cases, suites, coverage) -> str:
             rows.append([s["name"], k["total"], k["passed"], k["failed"], k["error"], k["skipped"], f"{k['time']:.2f} s"])
         out.append(table(["Suite", "Tests", "Passed", "Failed", "Errors", "Skipped", "Duration"], rows,
                          numeric=range(1, 7), trusted=False))
+        if undocumented:
+            out.append("<h2>Undocumented results</h2>")
+            out.append("<p>This CI run has results that report.json does not describe. "
+                       "Add each failure to defects[], or fix the test, before the next review.</p>")
+            out.append(table(["Test", "Status", "Message"], [[code(t), esc(s), f"<pre>{esc(m)}</pre>" if m else ""]
+                                                            for t, s, m in undocumented]))
         failing = [c for c in cases if c["status"] in ("failed", "error")]
         if failing:
             out.append("<h2>Failures</h2>")
-            defects = report.get("defects", [])
+            defects = report.get("defects") or []
             for c in failing:
                 d = next((d for d in defects if find_case([c], str(d.get("test", "")))), {})
                 out.append(f'<h3><span class="s-fail">{c["status"]}</span> {code(c["classname"] + "." + c["name"])}</h3>')
@@ -277,15 +302,18 @@ def derived_sections(report: dict, cases, suites, coverage) -> str:
         out.append("<h2>Traceability</h2>")
         rows = []
         for t in report["tests"]:
-            match = find_case(cases, str(t.get("test", ""))) if cases is not None else []
-            label, cls = CASE_LABELS[match[0]["status"] if len(match) == 1 else None]
+            if cases is None:
+                label, cls = "no JUnit", "s-muted"
+            else:
+                match = find_case(cases, str(t.get("test", "")))
+                label, cls = CASE_LABELS[match[0]["status"] if len(match) == 1 else None]
             rows.append([esc(str(t.get("id", ""))), code(t.get("test", "")), code(t.get("location", "")), esc(str(t.get("covers", ""))),
                          f'<span class="{cls}">{label}</span>'])
         out.append(table(["ID", "Test", "Location", "Covers", "Status"], rows))
     return "\n".join(out)
 
 
-def render_html(report: dict, cases, suites, coverage, inputs: list[str]) -> str:
+def render_html(report: dict, cases, suites, coverage, inputs: list[str], undocumented=()) -> str:
     title = str(report.get("title", "Test report"))
     css_title = title.replace("\\", "\\\\").replace('"', '\\"').replace("<", "\\3C ")
     verdict = report.get("verdict") or {}
@@ -293,7 +321,7 @@ def render_html(report: dict, cases, suites, coverage, inputs: list[str]) -> str
     tone = {"pass": "pass", "conditional": "warn", "fail": "fail"}.get(status, "info")
     body = [f"<h1>{esc(title)}</h1>", f'<p class="meta">{meta_line(report)}</p>', report.get("summary", ""),
             callout(tone, f'<span class="verdict"><b class="s-{tone}">{esc(status)}</b>{esc(str(verdict.get("text", "")))}</span>')]
-    for s in report.get("sections", []):
+    for s in report.get("sections") or []:
         body.append(f"<h2>{esc(str(s.get('heading', '')))}</h2>")
         body.append(s.get("text", ""))
         if t := s.get("table"):
@@ -301,7 +329,7 @@ def render_html(report: dict, cases, suites, coverage, inputs: list[str]) -> str
         if c := s.get("callout"):
             body.append(callout(c.get("tone", "info"), esc(str(c.get("text", "")))))
         body.append(s.get("after", ""))
-    body.append(derived_sections(report, cases, suites, coverage))
+    body.append(derived_sections(report, cases, suites, coverage, undocumented))
     built = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
     body.append(f"<footer>Built {esc(built)} by build_report.py from {esc(', '.join(inputs))}.</footer>")
     return f"""<!doctype html>
@@ -368,13 +396,40 @@ def print_pdf(chrome: str, html_path: Path, pdf_path: Path) -> None:
 
 # ----------------------------------------------------------------------------- main
 
-def copy_input(src: Path, dest: Path) -> None:
-    if not (dest.exists() and dest.samefile(src)):
-        shutil.copyfile(src, dest)
+class Parser(argparse.ArgumentParser):
+    """Usage errors exit 1, because exit 2 means the PDF was not built."""
+
+    def error(self, message: str):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
+def copy_inputs(pairs: list[tuple[Path, Path]], out: Path) -> None:
+    """Copy (source, destination) pairs into out without one input overwriting another.
+
+    Every source is read into a temporary file before any destination is written. JUnit files
+    left by an earlier run (junit.xml, junit-N.xml) that this run does not write are removed
+    when this run copies JUnit XML, unless they are inputs of this run.
+    """
+    staged = []
+    for i, (src, dest) in enumerate(pairs):
+        if dest.exists() and dest.samefile(src):
+            continue
+        tmp = out / f".build_report-{i}.tmp"
+        shutil.copyfile(src, tmp)
+        staged.append((tmp, dest))
+    keep = {dest.name for _, dest in pairs}
+    if any(name.startswith("junit") for name in keep):
+        for old in out.glob("junit*.xml"):
+            is_input = any(old.samefile(src) for src, _ in pairs)
+            if re.fullmatch(r"junit(-\d+)?\.xml", old.name) and old.name not in keep and not is_input:
+                old.unlink()
+    for tmp, dest in staged:
+        tmp.replace(dest)
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Build an HTML/PDF test report from report.json, JUnit XML and coverage JSON.")
+    ap = Parser(description="Build an HTML/PDF test report from report.json, JUnit XML and coverage JSON.")
     ap.add_argument("report", type=Path)
     ap.add_argument("--junit", type=Path, action="append", default=[])
     ap.add_argument("--coverage", type=Path)
@@ -382,16 +437,26 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path)
     ap.add_argument("--formats", default="html,pdf")
     ap.add_argument("--validate-only", action="store_true")
+    ap.add_argument("--ci", action="store_true",
+                    help="list new failures and missing test cases in an Undocumented results section instead of failing validation")
     args = ap.parse_args(argv)
 
     formats = [f.strip() for f in args.formats.split(",") if f.strip()]
+    if not formats:
+        ap.error(f"--formats is empty; choose from {', '.join(FORMATS)}")
     if bad := [f for f in formats if f not in FORMATS]:
         ap.error(f"unknown format(s) {', '.join(bad)}; choose from {', '.join(FORMATS)}")
-    report = json.loads(args.report.read_text())
-    cases, suites = parse_junit(args.junit) if args.junit else (None, [])
-    coverage = parse_coverage(args.coverage) if args.coverage else None
+    try:
+        report = json.loads(args.report.read_text())
+        if not isinstance(report, dict):
+            raise ValueError(f"{args.report} must hold a JSON object")
+        cases, suites = parse_junit(args.junit) if args.junit else (None, [])
+        coverage = parse_coverage(args.coverage) if args.coverage else None
+    except (ET.ParseError, OSError, json.JSONDecodeError, ValueError) as e:
+        print(f"Could not read the inputs: {e}", file=sys.stderr)
+        return 1
 
-    errors = validate(report, cases, args.root)
+    errors = validate(report, cases, args.root, args.ci)
     if errors:
         print(f"{len(errors)} validation error(s) in {args.report}:", file=sys.stderr)
         for e in errors:
@@ -401,17 +466,25 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{args.report} is valid.")
         return 0
 
+    undocumented = undocumented_results(report, cases) if args.ci and cases is not None else []
+    if failures := sum(row[1] in ("failed", "error") for row in undocumented):
+        verdict = report.get("verdict") or {}
+        report = {**report, "verdict": {"status": "fail", "text": (
+            f"The verdict is fail because this run has {failures} failing or erroring test(s) that report.json "
+            f"does not list in defects[]; see Undocumented results. The written verdict was "
+            f"{verdict.get('status')}: {verdict.get('text', '')}")}}
+
     out = args.out or args.report.parent
     out.mkdir(parents=True, exist_ok=True)
-    for i, src in enumerate(args.junit, 1):
-        copy_input(src, out / ("junit.xml" if len(args.junit) == 1 else f"junit-{i}.xml"))
+    pairs = [(src, out / ("junit.xml" if len(args.junit) == 1 else f"junit-{i}.xml")) for i, src in enumerate(args.junit, 1)]
     if args.coverage:
-        copy_input(args.coverage, out / "coverage.json")
+        pairs.append((args.coverage, out / "coverage.json"))
+    copy_inputs(pairs, out)
 
     inputs = [p.name for p in [args.report, *args.junit, *([args.coverage] if args.coverage else [])]]
     html_path = out / "report.html"
     if "html" in formats or "pdf" in formats:
-        html_path.write_text(render_html(report, cases, suites, coverage, inputs))
+        html_path.write_text(render_html(report, cases, suites, coverage, inputs, undocumented))
         if "html" in formats:
             print(html_path)
     if "summary" in formats:

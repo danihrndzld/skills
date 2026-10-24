@@ -2,7 +2,7 @@
 
 Write a report only when the user asks for one, e.g., an HTML page, a PDF, an email summary or CI artifacts. Otherwise the step 7 text block in SKILL.md is the output.
 
-The agent writes `report.json`, and `scripts/build_report.py` turns it into the report. The script needs only the Python 3.10+ standard library, plus Chrome for the PDF.
+The agent writes `report.json`, and `scripts/build_report.py` turns it into the report. The script needs only the Python 3.10+ standard library, plus Chrome for the PDF. Run `scripts/build_report.py` from this skill's own folder by its absolute path. The skill may be installed in the project's `.claude/skills`, globally in `~/.claude/skills` or `~/.agents/skills`, or inside a plugin, so use the folder that holds this skill's `SKILL.md`. It is called `$SKILL_DIR` below.
 
 ## Steps
 
@@ -25,12 +25,12 @@ Third, write `$R/report.json` with the sections listed below.
 Fourth, run the script.
 
 ```
-python3 .claude/skills/art-of-unit-testing/scripts/build_report.py $R/report.json \
+python3 $SKILL_DIR/scripts/build_report.py $R/report.json \
   [--junit $R/junit.xml ...] [--coverage $R/coverage.json] [--root .] \
-  [--out DIR] [--formats html,pdf,summary] [--validate-only]
+  [--out DIR] [--formats html,pdf,summary] [--validate-only] [--ci]
 ```
 
-`uv run` works in place of `python3`. Outputs go next to `report.json` unless you pass `--out`. The script exits 0 on success and 1 with a list of validation errors, which you fix before you run it again. It exits 2 when you asked for `pdf` and it found no Chrome. In that case the HTML is still written, and you can set the `CHROME` environment variable to the browser path. `--validate-only` checks the inputs without writing anything.
+`uv run` works in place of `python3`. Outputs go next to `report.json` unless you pass `--out`. The script exits 0 on success and 1 with a list of validation errors, which you fix before you run it again. It also exits 1 on unreadable inputs or a usage error. Exit 2 means `pdf` was requested and Chrome was not found, timed out, or wrote no PDF. The HTML is still written, and you can set the `CHROME` environment variable to the browser path. `--validate-only` checks the inputs without writing anything.
 
 ## Formats
 
@@ -52,6 +52,7 @@ Each entry in `tests` is `{ "id", "test", "location", "covers" }`. Each entry in
 
 - Every `location` is `file:line`, the file exists under `--root`, and that line or one of the 3 lines after it contains the test name or the ID.
 - With `--junit`, every `test` matches exactly one JUnit test case, and every failing or erroring JUnit case appears in `defects`.
+- With `--ci`, a failing JUnit case missing from `defects` and a `tests` entry with no JUnit case are listed in an Undocumented results section instead of failing validation. Location checks stay errors.
 
 A test that fails because the production code has a defect stays failing and goes into `defects`. Never change the expected value to make it pass.
 
@@ -59,27 +60,27 @@ A test that fails because the production code has a defect stays failing and goe
 
 Use these headings, in this order, when the user asked you to review or clean up existing tests.
 
-1. **Result before and after**: tests, run time, pass count and mutants caught, before and after your changes.
-2. **What I deleted**: test, file and reason (the rejection list item or the pillar at 0).
-3. **What I split**: tests with several exit points or several Act lines, and the tests that replaced them.
-4. **What I added**: new tests, with the FR or the gap each one closes.
-5. **Mutants**: each mutation you made in SKILL.md step 6, and the test that went red or "survived".
-6. **What I left alone**: tests you kept unchanged, and why.
-7. **Out of scope and design notes**: behavior that needs integration or e2e tests, multi-line Act, private logic you could not reach, and fat controllers.
-8. **Verdict**: repeats `verdict` with the reason.
+1. Result before and after: tests, run time, pass count and mutants caught, before and after your changes.
+2. What I deleted: test, file and reason (the rejection list item or the pillar at 0).
+3. What I split: tests with several exit points or several Act lines, and the tests that replaced them.
+4. What I added: new tests, with the FR or the gap each one closes.
+5. Mutants: each mutation you made in SKILL.md step 6, and the test that went red or "survived".
+6. What I left alone: tests you kept unchanged, and why.
+7. Out of scope and design notes: behavior that needs integration or e2e tests, multi-line Act, private logic you could not reach, and fat controllers.
+8. Verdict: repeats `verdict` with the reason.
 
 ## Sections for new tests mode
 
 Use these headings when you wrote tests for new or untested code.
 
-1. **Requirements and triage**: the FRs with their source and risk level, and the step 2 triage of each unit.
-2. **Tests added, changed and deleted**: one row per test, with the FR, the exit point and the technique from `test-design.md`.
-3. **Red check**: for each test, how you saw it fail (TDD red or a mutation).
-4. **Assumptions**: each assumed requirement and the tests that depend on it.
-5. **Out of scope and design notes**: same as review mode.
-6. **Verdict**: same as review mode.
+1. Requirements and triage: the FRs with their source and risk level, and the step 2 triage of each unit.
+2. Tests added, changed and deleted: one row per test, with the FR, the exit point and the technique from `test-design.md`.
+3. Red check: for each test, how you saw it fail (TDD red or a mutation).
+4. Assumptions: each assumed requirement and the tests that depend on it.
+5. Out of scope and design notes: same as review mode.
+6. Verdict: same as review mode.
 
-The script adds **Test run** (totals and a per-suite table) and **Failures** from the JUnit XML, **Coverage** from the coverage JSON, and **Traceability** from `tests` joined with the JUnit status. Don't write those sections yourself.
+The script adds Test run (totals and a per-suite table) and Failures from the JUnit XML, Coverage from the coverage JSON, and Traceability from `tests` joined with the JUnit status. Don't write those sections yourself.
 
 ## Example report.json for review mode
 
@@ -116,7 +117,9 @@ The script adds **Test run** (totals and a per-suite table) and **Failures** fro
 The user picks the formats with `--formats` and picks the attachments in the mail step. Upload the whole report folder as the CI artifact, so it holds `report.html`, `report.pdf`, `summary.html`, `junit.xml` and `coverage.json`. The email uses `summary.html` as the body and attaches `report.pdf` and `junit.xml`.
 
 ```yaml
-- run: python3 .claude/skills/art-of-unit-testing/scripts/build_report.py test-reports/latest/report.json --junit test-reports/latest/junit.xml --formats html,pdf,summary
+- name: Build the test report
+  if: always()
+  run: python3 .claude/skills/art-of-unit-testing/scripts/build_report.py test-reports/latest/report.json --junit test-reports/latest/junit.xml --formats html,pdf,summary --ci
 - uses: actions/upload-artifact@v4
   if: always()
   with:
@@ -135,5 +138,9 @@ The user picks the formats with `--formats` and picks the attachments in the mai
     html_body: file://test-reports/latest/summary.html
     attachments: test-reports/latest/report.pdf,test-reports/latest/junit.xml
 ```
+
+The build step must run even when tests fail. Give the test step `continue-on-error: true`, or put `if: always()` on every later step as above, so the test step does not stop the job before the report is built. A committed `report.json` cannot list failures that first happen in this run, so `--ci` lists them, and `tests[]` entries that match no JUnit case, in an "Undocumented results" section instead of stopping with a validation error. When any of them failed, the verdict shown is fail.
+
+The path `.claude/skills/art-of-unit-testing/scripts/build_report.py` works in CI only when the skill is installed at project level (`npx skills add danihrndzld/skills --skill art-of-unit-testing`, with the installed folder committed) or when you commit a copy of the script to the repo and point the step at it.
 
 Where the pipeline runs this step is covered by art-of-cicd.

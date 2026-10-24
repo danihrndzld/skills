@@ -2,7 +2,7 @@
 
 These are the agent skills I use for testing software and for writing. They work with Claude Code, Codex, Cursor and the other agents that read `SKILL.md` files.
 
-There are four testing skills, one for each level of testing and one for the pipeline that runs them. Each one tells the agent which tests are worth writing, how to write them so they fail only when behavior breaks, and how to prove that each test can fail. Each one can also turn the results into a report in JUnit XML, HTML and PDF, and you choose which of those files go to your CI artifacts and to an email. There are also two writing skills, one that removes AI writing patterns from Spanish text and one for writing exams.
+There are four testing skills, one for each level of testing and one for the pipeline that runs them. Each one tells the agent which tests are worth writing, how to write them so they fail only when behavior breaks, and how to prove that each test can fail. Each one can also turn the results into an HTML report, a PDF and an email summary, with the JUnit XML from your test runner attached, and you choose which of those files go to your CI artifacts and to an email. There are also two writing skills, one that removes AI writing patterns from Spanish text and one for writing exams.
 
 ## Installation
 
@@ -41,7 +41,7 @@ The script links every skill folder into `~/.claude/skills` and `~/.agents/skill
 
 </details>
 
-After you install, restart your agent. The agent loads a skill on its own when your request matches the skill's description, and you can also call a skill by name, for example `/art-of-unit-testing`.
+After you install, restart your agent. The agent loads a skill on its own when your request matches the skill's description, and you can also call a skill by name. Skills installed with `npx skills` are called as `/art-of-unit-testing`. With the Claude Code plugin they are namespaced, as in `/danihrndzld-skills:art-of-unit-testing`.
 
 ## Why these skills exist
 
@@ -73,10 +73,10 @@ The `anti-slop-es` skill measures how often AI writing patterns appear in a Span
 
 ## Reports
 
-Each testing skill has a copy of `scripts/build_report.py`, which needs only Python 3.10 or later. Google Chrome, Chromium, Edge or Brave is needed for the PDF. The agent writes `report.json` and runs the script, and you choose the output files with `--formats`.
+Each testing skill has a copy of `scripts/build_report.py`, which needs only Python 3.10 or later. Google Chrome, Chromium, Edge or Brave is needed for the PDF. The agent writes `report.json` and runs the script from the skill's own folder by its absolute path, because the skill may be installed in the project's `.claude/skills`, globally in `~/.claude/skills` or `~/.agents/skills`, or inside a plugin. You choose the output files with `--formats`.
 
 ```bash
-python3 .claude/skills/art-of-unit-testing/scripts/build_report.py test-reports/2026-10-24-rates/report.json \
+python3 ~/.claude/skills/art-of-unit-testing/scripts/build_report.py test-reports/2026-10-24-rates/report.json \
   --junit junit.xml --coverage coverage.json --formats html,pdf,summary
 ```
 
@@ -87,7 +87,7 @@ python3 .claude/skills/art-of-unit-testing/scripts/build_report.py test-reports/
 | `report.pdf` | The same report on A4 pages, with page numbers and bookmarks | Email attachment or audit record |
 | `summary.html` | A short summary with inline styles that email clients can show | Email body |
 
-Each skill's `references/report.md` has a GitHub Actions example that uploads the report folder as an artifact and sends the summary by email with the PDF attached. You decide which files to upload and which files to attach.
+Each skill's `references/report.md` has a GitHub Actions example that uploads the report folder as an artifact and sends the summary by email with the PDF attached. You decide which files to upload and which files to attach. The build step runs with `if: always()` and `--ci`, so a failing test step does not stop the job before the report is built, and new failures show up in an Undocumented results section instead of a validation error. That example calls `.claude/skills/<skill>/scripts/build_report.py`, which exists in CI only when the skill is installed at project level (`npx skills add danihrndzld/skills --skill <skill>`, with the folder committed) or when you commit a copy of the script to the repo.
 
 ## Local development
 

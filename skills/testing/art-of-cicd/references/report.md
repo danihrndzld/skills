@@ -1,6 +1,6 @@
 # CI/CD report
 
-Produce a report only when the user asks for one. The agent writes `report.json` with its judgment. The script `.claude/skills/art-of-cicd/scripts/build_report.py` validates it, adds the sections it can derive from JUnit XML and coverage JSON, and renders the outputs. Use the absolute path of this skill's `scripts/build_report.py` when the skill is installed elsewhere. Run it from the root of the project under review.
+Produce a report only when the user asks for one. The agent writes `report.json` with its judgment. The script `scripts/build_report.py` validates it, adds the sections it can derive from JUnit XML and coverage JSON, and renders the outputs. Run `scripts/build_report.py` from this skill's own folder by its absolute path. The skill may be installed in the project's `.claude/skills`, globally in `~/.claude/skills` or `~/.agents/skills`, or inside a plugin, so use the folder that holds this skill's `SKILL.md`. It is called `$SKILL_DIR` below. Run it from the root of the project under review.
 
 ## Steps
 
@@ -13,15 +13,15 @@ Produce a report only when the user asks for one. The agent writes `report.json`
 ## CLI
 
 ```
-python3 .claude/skills/art-of-cicd/scripts/build_report.py test-reports/2026-10-24-ci-pipeline/report.json \
+python3 $SKILL_DIR/scripts/build_report.py test-reports/2026-10-24-ci-pipeline/report.json \
   [--junit junit.xml ...] [--coverage coverage.json] [--root .] \
-  [--out DIR] [--formats html,pdf,summary] [--validate-only]
+  [--out DIR] [--formats html,pdf,summary] [--validate-only] [--ci]
 ```
 
 - Outputs go next to `report.json` unless `--out` is given.
 - `--formats` takes any comma separated subset of `html`, `pdf` and `summary`. The default is `html,pdf`. Outputs are `report.html`, `report.pdf` and `summary.html` (the email body). Ask the user which formats they want, and default to `html,pdf`.
 - A CI/CD report often covers several suites. Pass `--junit` once per file, for example `--junit unit.xml --junit integration.xml --junit e2e.xml`. The script copies them into the output folder as `junit-1.xml`, `junit-2.xml` and so on, and aggregates the totals and the per suite table.
-- Exit 0 means success. Exit 1 prints validation errors. Exit 2 means `pdf` was requested and no Chrome was found. The HTML is still written, and you can set the `CHROME` environment variable to the browser path.
+- Exit 0 means success. Exit 1 prints validation errors, unreadable inputs or a usage error. Exit 2 means `pdf` was requested and Chrome was not found, timed out, or wrote no PDF. The HTML is still written, and you can set the `CHROME` environment variable to the browser path.
 - `uv run` works in place of `python3`. The script needs only the Python 3.10+ standard library.
 
 ## report.json
@@ -55,6 +55,7 @@ Validation rules:
 
 - Every `tests[].location` and `defects[].location` is `file:line`, the file exists under `--root`, and that line or the next 3 lines contain the test name or the ID.
 - With `--junit`, every `tests[].test` and `defects[].test` matches exactly one JUnit test case, and every failing or erroring JUnit case appears in `defects[]`.
+- With `--ci`, a failing or erroring JUnit case missing from `defects[]` and a `tests[]` entry that matches no JUnit case are not errors. The script lists them in an Undocumented results section and shows the verdict as fail when any of them failed. Location checks stay errors.
 - `verdict.status` is `pass`, `conditional` or `fail`.
 
 Use `tests[]` only for tests you cite as evidence, for example a test with a retry that wraps assertions. Pipeline findings that point at workflow files go in the Findings section table, not in `tests[]`.
@@ -77,7 +78,9 @@ Write these in order. Skip a section only when it does not apply, and say why in
 The user chooses the formats with `--formats`, which folder to upload as a CI artifact, and which files to attach to the email. A common choice is `summary.html` as the body and `report.pdf` plus the JUnit files as attachments.
 
 ```yaml
-- run: python3 .claude/skills/art-of-cicd/scripts/build_report.py test-reports/latest/report.json --junit test-reports/latest/unit.xml --junit test-reports/latest/e2e.xml --formats html,pdf,summary
+- name: Build the test report
+  if: always()
+  run: python3 .claude/skills/art-of-cicd/scripts/build_report.py test-reports/latest/report.json --junit test-reports/latest/unit.xml --junit test-reports/latest/e2e.xml --formats html,pdf,summary --ci
 - uses: actions/upload-artifact@v4
   if: always()
   with:
@@ -98,3 +101,7 @@ The user chooses the formats with `--formats`, which folder to upload as a CI ar
 ```
 
 Pin both actions by commit SHA in a real pipeline (see `delivery.md`). The tags here keep the example readable.
+
+The build step must run even when tests fail. Give the test step `continue-on-error: true`, or put `if: always()` on every later step as above, so the test step does not stop the job before the report is built. A committed `report.json` cannot list failures that first happen in this run, so `--ci` lists them, and `tests[]` entries that match no JUnit case, in an "Undocumented results" section instead of stopping with a validation error. When any of them failed, the verdict shown is fail.
+
+The path `.claude/skills/art-of-cicd/scripts/build_report.py` works in CI only when the skill is installed at project level (`npx skills add danihrndzld/skills --skill art-of-cicd`, with the installed folder committed) or when you commit a copy of the script to the repo and point the step at it.

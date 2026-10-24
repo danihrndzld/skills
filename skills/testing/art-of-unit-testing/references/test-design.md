@@ -2,7 +2,7 @@
 
 Exhaustive testing is impossible, so a test design technique picks the few inputs worth a test and gives a reason for skipping the rest. For example, an 8 character field of letters and digits has 36^8 (about 2.8 trillion) possible inputs, and a unit suite gets about ten tests for it.
 
-Each technique below produces coverage items (partitions, boundaries, rules, transitions, branches). Each coverage item becomes one scenario in step 3 of SKILL.md, in the form `entry point → exit point → scenario`. Scenarios that share an entry point and an exit point and differ only in input and expected value go into one parametrized test, with one row per coverage item and the item ID in the row name.
+Each technique below produces coverage items (partitions, boundaries, rules, transitions, branches). Each coverage item becomes one scenario in step 3 of SKILL.md, in the form `entry point -> exit point -> scenario`. Scenarios that share an entry point and an exit point and differ only in input and expected value go into one parametrized test, with one row per coverage item and the item ID in the row name.
 
 Section numbers such as §4.2.1 refer to the ISTQB Certified Tester Foundation Level syllabus v4.0.1 (2024). The syllabus groups techniques into black box (from the specification), white box (from the code) and experience based (from what the tester knows), and it treats experience based techniques as a complement to the other two (§4.1).
 

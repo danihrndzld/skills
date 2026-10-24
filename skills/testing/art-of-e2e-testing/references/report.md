@@ -2,7 +2,7 @@
 
 Build a report only when the user asks for one, e.g., "give me a report", "a PDF", "something for CI", or "email the results". The tests and the step 7 block in `SKILL.md` come first. The report adds a document for people who won't read the code.
 
-You write one file, `report.json`. The script `scripts/build_report.py` reads it together with the JUnit XML from the test runner, validates both, and writes the outputs. Counts, pass and fail results, and durations come from the JUnit XML, so never type them by hand.
+You write one file, `report.json`. Run `scripts/build_report.py` from this skill's own folder by its absolute path. The skill may be installed in the project's `.claude/skills`, globally in `~/.claude/skills` or `~/.agents/skills`, or inside a plugin, so use the folder that holds this skill's `SKILL.md`. It is called `$SKILL_DIR` below. The script reads it together with the JUnit XML from the test runner, validates both, and writes the outputs. Counts, pass and fail results, and durations come from the JUnit XML, so never type them by hand.
 
 ## Steps
 
@@ -14,7 +14,7 @@ You write one file, `report.json`. The script `scripts/build_report.py` reads it
    | Playwright (JS/TS) | `PLAYWRIGHT_JUNIT_OUTPUT_NAME=$R/junit.xml npx playwright test --reporter=junit` |
    | Playwright (Python), Selenium or Appium with pytest | `pytest tests/e2e --junitxml=$R/junit.xml` |
    | Cypress | `npx cypress run --reporter junit --reporter-options "mochaFile=$R/junit-[hash].xml"` |
-   | Selenium or Appium with JUnit 5 | `mvn verify`, then copy `target/surefire-reports/*.xml` to `$R` |
+   | Selenium or Appium with JUnit 5 | `mvn verify` writes one `target/surefire-reports/TEST-*.xml` per test class; Gradle writes `build/test-results/test/TEST-*.xml` |
    | WebdriverIO | `@wdio/junit-reporter` with `outputDir: '$R'` in `wdio.conf` |
 
    Keep a retry count of 0 for the reported run, or report every test that passed on retry as flaky in the Stability section.
@@ -22,11 +22,11 @@ You write one file, `report.json`. The script `scripts/build_report.py` reads it
 4. Build the outputs:
 
    ```
-   python3 .claude/skills/art-of-e2e-testing/scripts/build_report.py $R/report.json \
+   python3 $SKILL_DIR/scripts/build_report.py $R/report.json \
      --junit $R/junit.xml --root . --formats html,pdf
    ```
 
-   Pass one `--junit` flag per file when the runner writes several (Cypress, shards). Use `uv run` instead of `python3` if the project uses uv. Add `--validate-only` to check `report.json` without rendering. Exit 1 lists validation errors, so fix them and run again. Exit 2 means no Chrome was found. The HTML is still written, and you can set the `CHROME` environment variable to the browser path.
+   Pass one `--junit` flag per file when the runner writes several (Cypress, shards, Maven, Gradle). For Maven, list the files or use `$(for f in target/surefire-reports/TEST-*.xml; do printf -- '--junit %s ' "$f"; done)` in place of `--junit $R/junit.xml`. Use `uv run` instead of `python3` if the project uses uv. Add `--validate-only` to check `report.json` without rendering. Exit 1 lists validation errors, so fix them and run again. Exit 2 means `pdf` was requested and Chrome was not found, timed out, or wrote no PDF. The HTML is still written, and you can set the `CHROME` environment variable to the browser path.
 
 ## Formats
 
@@ -52,16 +52,16 @@ Ask the user which formats they want when they mention CI or email. Otherwise pr
   "summary": "<p>Facts with numbers.</p>",
   "verdict": { "status": "pass | conditional | fail", "text": "One or two sentences." },
   "sections": [ { "heading": "...", "text": "<p>...</p>", "table": { "columns": [], "rows": [] } } ],
-  "tests": [ { "id": "J-1", "test": "checkout > customer pays for a cart with a saved card",
+  "tests": [ { "id": "J-1", "test": "checkout › customer pays for a cart with a saved card",
                "location": "e2e/checkout.spec.ts:18", "covers": "Returning customer pays with a saved card (AC-3)" } ],
-  "defects": [ { "id": "D-1", "test": "checkout > declined card keeps the cart", "location": "e2e/checkout.spec.ts:44",
+  "defects": [ { "id": "D-1", "test": "checkout › declined card keeps the cart", "location": "e2e/checkout.spec.ts:44",
                  "severity": "high", "expected": "Cart still holds 3 items", "actual": "Cart is empty", "analysis": "..." } ]
 }
 ```
 
 - `skill` is the folder name, `art-of-e2e-testing`.
 - `tests[]` has one row per journey or acceptance criterion. Use journey IDs (`J-1`) or acceptance criterion IDs (`AC-3`).
-- `tests[].test` must match exactly one JUnit case by `name` or `classname.name`. Playwright and Cypress build the name from the describe titles and the test title, so copy the `name` attribute from the JUnit XML, not the string in the `test()` call.
+- `tests[].test` must match exactly one JUnit case by `name` or `classname.name`. Playwright and Cypress build the name from the describe titles and the test title, so copy the `name` attribute from the JUnit XML, not the string in the `test()` call. Playwright joins the titles with ` › ` (a space, the character U+203A, a space), as in `checkout › customer pays for a cart with a saved card`. Copy each name exactly from the XML, because the match is exact.
 - `location` is `file:line`, and that line or the 3 lines after it must contain the test name or the ID. Put the journey ID in the test title, e.g., `test('J-1 customer pays with a saved card', ...)`, when the title and the JUnit name differ.
 - Every failing or erroring JUnit case must appear in `defects[]`. A test that fails because the app is wrong stays failing and is reported as a defect. Never change the expected outcome to make it pass. A failure caused by the test or the environment is fixed, not reported as a product defect.
 - Severity: high is a journey the user can't finish, or a wrong result for money, data, or security, with no workaround. Medium is a wrong result with a workaround or in a rare case. Low is a message, layout, or cosmetic problem.
@@ -87,7 +87,9 @@ Write in the past tense, with a number, an ID, or a `file:line` in each sentence
 The user picks the formats with `--formats` and the attachments in the mail step. Upload the whole report folder as the CI artifact, and add the runner's failure evidence folders to the same artifact: Playwright `test-results/` (traces, screenshots, videos), Cypress `cypress/screenshots/` and `cypress/videos/`. Send `summary.html` as the email body and attach `report.pdf` and `junit.xml`. Don't attach traces or videos to email, because they are large. The email can point to the CI run instead.
 
 ```yaml
-- run: python3 .claude/skills/art-of-e2e-testing/scripts/build_report.py test-reports/latest/report.json --junit test-reports/latest/junit.xml --formats html,pdf,summary
+- name: Build the test report
+  if: always()
+  run: python3 .claude/skills/art-of-e2e-testing/scripts/build_report.py test-reports/latest/report.json --junit test-reports/latest/junit.xml --formats html,pdf,summary --ci
 - uses: actions/upload-artifact@v4
   if: always()
   with:
@@ -110,3 +112,7 @@ The user picks the formats with `--formats` and the attachments in the mail step
 ```
 
 In CI, the JUnit step must write to `test-reports/latest/junit.xml`, and `report.json` must already be in that folder, either committed or written by an earlier step. Replace `test-results/` with `cypress/screenshots/` and `cypress/videos/` for Cypress.
+
+The build step must run even when tests fail. Give the test step `continue-on-error: true`, or put `if: always()` on every later step as above, so the test step does not stop the job before the report is built. A committed `report.json` cannot list failures that first happen in this run, so `--ci` lists them, and `tests[]` entries that match no JUnit case, in an "Undocumented results" section instead of stopping with a validation error. When any of them failed, the verdict shown is fail.
+
+The path `.claude/skills/art-of-e2e-testing/scripts/build_report.py` works in CI only when the skill is installed at project level (`npx skills add danihrndzld/skills --skill art-of-e2e-testing`, with the installed folder committed) or when you commit a copy of the script to the repo and point the step at it.
