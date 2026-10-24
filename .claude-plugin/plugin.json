@@ -1,0 +1,17 @@
+{
+  "name": "danihrndzld-skills",
+  "version": "1.0.0",
+  "description": "Unit, integration, e2e and CI/CD testing skills that produce JUnit, HTML and PDF reports, plus Spanish anti-slop and exam writing.",
+  "author": { "name": "Daniel Hernández", "url": "https://github.com/danihrndzld" },
+  "repository": "https://github.com/danihrndzld/skills",
+  "license": "MIT",
+  "keywords": ["testing", "unit-testing", "integration-testing", "e2e", "ci-cd", "test-reports", "anti-slop", "exams"],
+  "skills": [
+    "./skills/testing/art-of-unit-testing",
+    "./skills/testing/art-of-integration-testing",
+    "./skills/testing/art-of-e2e-testing",
+    "./skills/testing/art-of-cicd",
+    "./skills/writing/anti-slop-es",
+    "./skills/writing/exam-writing"
+  ]
+}

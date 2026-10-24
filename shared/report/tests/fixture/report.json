@@ -1,0 +1,72 @@
+{
+  "title": "Unit test review of parcel-rates",
+  "skill": "art-of-unit-testing",
+  "meta": { "date": "2026-10-24", "branch": "review/parcel-rates", "commit": "a1b2c3d", "command": "pytest tests -q", "tools": "pytest 9, pytest-cov 7, Python 3.14" },
+  "summary": "<p>I reviewed <code>shipping_rate</code> in <code>src/parcel_rates.py</code>, the only public function of parcel-rates. It had no tests. I wrote 9 tests from the rate table in the docstring: one per weight band, both band edges, both surcharge rules and both rejected weights.</p><p>8 tests pass. 1 test fails because a parcel of exactly 5 kg is priced at 1800 instead of 900 (defect D-1). Every mutant in the red check made at least one test fail.</p>",
+  "verdict": { "status": "conditional", "text": "The tests are ready to merge. The code is not: fix the 5 kg band edge (D-1) before release." },
+  "sections": [
+    {
+      "heading": "Requirements and triage",
+      "text": "<p>The expected values come from the rate table in the docstring of <code>shipping_rate</code>, not from the code's current output.</p>",
+      "table": {
+        "columns": ["ID", "Rule", "Quadrant", "Decision"],
+        "rows": [
+          ["R-1", "Up to 1 kg costs 500", "Domain logic", "Unit test both sides of 1 kg"],
+          ["R-2", "Over 1 kg and up to 5 kg costs 900", "Domain logic", "Unit test the middle and the 5 kg edge"],
+          ["R-3", "Over 5 kg and up to 20 kg costs 1800", "Domain logic", "Unit test one value inside"],
+          ["R-4", "Remote addresses add 150 up to 1 kg, 300 above", "Domain logic", "One test per surcharge"],
+          ["R-5", "Zero weight and weights over 20 kg are rejected", "Domain logic", "One test per limit, checking the message"]
+        ]
+      },
+      "callout": { "tone": "info", "text": "The module has no collaborators, so the tests use no test doubles." }
+    },
+    {
+      "heading": "Tests added",
+      "table": {
+        "columns": ["Test", "Rule", "Input", "Expected (cents)"],
+        "rows": [
+          ["<code>test_parcel_of_half_a_kilo_costs_500</code>", "R-1", "0.5 kg", "500"],
+          ["<code>test_parcel_of_exactly_1_kg_stays_in_the_lightest_band</code>", "R-1", "1 kg", "500"],
+          ["<code>test_parcel_of_3_kg_costs_900</code>", "R-2", "3 kg", "900"],
+          ["<code>test_parcel_of_exactly_5_kg_stays_in_the_middle_band</code>", "R-2", "5 kg", "900"],
+          ["<code>test_parcel_of_12_kg_costs_1800</code>", "R-3", "12 kg", "1800"],
+          ["<code>test_remote_light_parcel_adds_150</code>", "R-4", "0.5 kg, remote", "650"],
+          ["<code>test_remote_heavy_parcel_adds_300</code>", "R-4", "12 kg, remote", "2100"],
+          ["<code>test_zero_weight_is_rejected</code>", "R-5", "0 kg", "ValueError"],
+          ["<code>test_parcel_over_20_kg_is_rejected</code>", "R-5", "20.5 kg", "ValueError"]
+        ],
+        "numeric": ["Expected (cents)"]
+      }
+    },
+    {
+      "heading": "Red check",
+      "text": "<p>I changed one production line at a time, ran the tests and restored the code. Each mutant had to make at least one test fail.</p>",
+      "table": {
+        "columns": ["Line", "Change", "Test that failed"],
+        "rows": [
+          ["<code>parcel_rates.py:12</code>", "<code>&lt;= 0</code> becomes <code>&lt; 0</code>", "<code>test_zero_weight_is_rejected</code>"],
+          ["<code>parcel_rates.py:14</code>", "<code>&gt; MAX_WEIGHT_KG</code> becomes <code>&gt; 25</code>", "<code>test_parcel_over_20_kg_is_rejected</code>"],
+          ["<code>parcel_rates.py:16</code>", "<code>&lt;= 1</code> becomes <code>&lt; 1</code>", "<code>test_parcel_of_exactly_1_kg_stays_in_the_lightest_band</code>"],
+          ["<code>parcel_rates.py:19</code>", "<code>900</code> becomes <code>1000</code>", "<code>test_parcel_of_3_kg_costs_900</code>"],
+          ["<code>parcel_rates.py:23</code>", "<code>150</code> becomes <code>300</code>", "<code>test_remote_light_parcel_adds_150</code>"],
+          ["<code>parcel_rates.py:22</code>", "<code>if remote</code> becomes <code>if not remote</code>", "<code>test_parcel_of_half_a_kilo_costs_500</code> and 6 more"]
+        ]
+      },
+      "callout": { "tone": "pass", "text": "6 of 6 mutants were detected." }
+    }
+  ],
+  "tests": [
+    { "id": "R-1", "test": "test_parcel_of_half_a_kilo_costs_500", "location": "tests/test_parcel_rates.py:6", "covers": "Up to 1 kg costs 500" },
+    { "id": "R-1", "test": "test_parcel_of_exactly_1_kg_stays_in_the_lightest_band", "location": "tests/test_parcel_rates.py:10", "covers": "1 kg is still the lightest band" },
+    { "id": "R-2", "test": "test_parcel_of_3_kg_costs_900", "location": "tests/test_parcel_rates.py:14", "covers": "Over 1 kg up to 5 kg costs 900" },
+    { "id": "R-2", "test": "test_parcel_of_exactly_5_kg_stays_in_the_middle_band", "location": "tests/test_parcel_rates.py:18", "covers": "5 kg is still the middle band" },
+    { "id": "R-3", "test": "test_parcel_of_12_kg_costs_1800", "location": "tests/test_parcel_rates.py:22", "covers": "Over 5 kg up to 20 kg costs 1800" },
+    { "id": "R-4", "test": "test_remote_light_parcel_adds_150", "location": "tests/test_parcel_rates.py:26", "covers": "Remote surcharge of 150 up to 1 kg" },
+    { "id": "R-4", "test": "test_remote_heavy_parcel_adds_300", "location": "tests/test_parcel_rates.py:30", "covers": "Remote surcharge of 300 above 1 kg" },
+    { "id": "R-5", "test": "test_zero_weight_is_rejected", "location": "tests/test_parcel_rates.py:34", "covers": "Zero weight is rejected" },
+    { "id": "R-5", "test": "test_parcel_over_20_kg_is_rejected", "location": "tests/test_parcel_rates.py:39", "covers": "Weights over 20 kg are rejected" }
+  ],
+  "defects": [
+    { "id": "D-1", "test": "test_parcel_of_exactly_5_kg_stays_in_the_middle_band", "location": "tests/test_parcel_rates.py:18", "severity": "high", "expected": "shipping_rate(5) returns 900", "actual": "shipping_rate(5) returns 1800", "analysis": "src/parcel_rates.py:18 uses weight_kg < 5 where the rate table says up to and including 5 kg. Every parcel of exactly 5 kg is overcharged by 900 cents." }
+  ]
+}

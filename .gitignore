@@ -1,0 +1,6 @@
+.DS_Store
+.omc/
+__pycache__/
+.pytest_cache/
+test-reports/
+shared/report/tests/fixture/out/

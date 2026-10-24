@@ -1,0 +1,14 @@
+{
+  "name": "danihrndzld",
+  "owner": { "name": "Daniel Hernández", "url": "https://github.com/danihrndzld" },
+  "description": "Daniel Hernández's testing and writing skills as an installable Claude Code plugin.",
+  "plugins": [
+    {
+      "name": "danihrndzld-skills",
+      "source": "./",
+      "description": "Unit, integration, e2e and CI/CD testing skills that produce JUnit, HTML and PDF reports, plus Spanish anti-slop and exam writing.",
+      "category": "testing",
+      "keywords": ["testing", "ci-cd", "test-reports", "writing"]
+    }
+  ]
+}
