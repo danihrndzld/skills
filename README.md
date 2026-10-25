@@ -93,6 +93,20 @@ Each skill's `references/report.md` has a GitHub Actions example that uploads th
 
 Clone the repo and run `scripts/link-skills.sh`, so your agent uses the files in the repo. The report builder lives in `shared/report/`, and `scripts/sync-shared.sh` copies it into each testing skill. Run `scripts/check.sh` before you commit, because CI runs the same checks.
 
+## Sources
+
+The testing skills are based on the sources below. References [1] and [2] shaped art-of-unit-testing and the rules for test doubles in the integration skill. Reference [3] shaped art-of-cicd, and [4] covers the agile practices behind the pipeline and testing advice. Reference [5] is the basis for the test design techniques, test levels and test types in all four testing skills. Each skill lists more specific sources in its `references` folder, for example `skills/testing/art-of-cicd/references/sources.md`.
+
+[1] R. Osherove and V. Khorikov, *The Art of Unit Testing: With Examples in JavaScript*, 3rd ed. Shelter Island, NY, USA: Manning Publications, 2024.
+
+[2] V. Khorikov, *Unit Testing: Principles, Practices, and Patterns*. Shelter Island, NY, USA: Manning Publications, 2020.
+
+[3] G. Kim, J. Humble, P. Debois, J. Willis, and N. Forsgren, *The DevOps Handbook: How to Create World-Class Agility, Reliability, and Security in Technology Organizations*, 2nd ed. Portland, OR, USA: IT Revolution Press, 2021.
+
+[4] P. Flewelling, *The Agile Developer's Handbook: Get More Value from Your Software Development: Get the Best Out of the Agile Methodology*. Birmingham, U.K.: Packt Publishing, 2018.
+
+[5] International Software Testing Qualifications Board, "Certified Tester Foundation Level (CTFL) syllabus," v4.0.1, Sep. 15, 2024. [Online]. Available: https://www.istqb.org/wp-content/uploads/2024/11/ISTQB_CTFL_Syllabus_v4.0.1.pdf
+
 ## License
 
 MIT

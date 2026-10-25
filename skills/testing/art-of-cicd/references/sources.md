@@ -4,7 +4,7 @@ Bracketed numbers in the other reference files point to this list. Pipeline voca
 
 ## Testing and quality
 
-[1] ISTQB, *Certified Tester Foundation Level Syllabus*, v4.0.1, 2024.
+[1] International Software Testing Qualifications Board, "Certified Tester Foundation Level (CTFL) syllabus," v4.0.1, Sep. 15, 2024. [Online]. Available: https://www.istqb.org/wp-content/uploads/2024/11/ISTQB_CTFL_Syllabus_v4.0.1.pdf
 [2] C. Kaner, J. Bach, and B. Pettichord, *Lessons Learned in Software Testing: A Context-Driven Approach*. New York, NY, USA: John Wiley & Sons, 2002.
 [3] F. P. Brooks, *The Mythical Man-Month*. Reading, MA, USA: Addison-Wesley, 1975.
 [4] K. Beck, *Test-Driven Development: By Example*. Boston, MA, USA: Addison-Wesley, 2002.
@@ -17,7 +17,7 @@ Bracketed numbers in the other reference files point to this list. Pipeline voca
 ## Continuous delivery and CI/CD
 
 [10] C. Wilson, *Grokking Continuous Delivery*. Shelter Island, NY, USA: Manning Publications, 2022.
-[11] G. Kim, J. Humble, P. Debois, and J. Willis, *The DevOps Handbook*. Portland, OR, USA: IT Revolution Press, 2016.
+[11] G. Kim, J. Humble, P. Debois, J. Willis, and N. Forsgren, *The DevOps Handbook: How to Create World-Class Agility, Reliability, and Security in Technology Organizations*, 2nd ed. Portland, OR, USA: IT Revolution Press, 2021.
 [12] J. Humble and D. Farley, *Continuous Delivery*. Boston, MA, USA: Addison-Wesley, 2010.
 [13] P. M. Duvall, S. Matyas, and A. Glover, *Continuous Integration: Improving Software Quality and Reducing Risk*. Boston, MA, USA: Addison-Wesley, 2007.
 [14] B. Beyer, C. Jones, J. Petoff, and N. R. Murphy, Eds., *Site Reliability Engineering: How Google Runs Production Systems*. Sebastopol, CA, USA: O'Reilly Media, 2016.
